@@ -1,0 +1,51 @@
+name: CI/CD Pipeline to GCP VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Stage 1: Build & Test (CI)
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build and Verify Code
+        run: |
+          echo "Building application image..."
+          docker build -t my-app:${{ github.sha }} .
+
+  # Stage 2: Deploy to VM via SSH (CD)
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GCP VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "Connected to GCP VM successfully!"
+            
+            # โคลนโปรเจกต์ถ้ายังไม่มี
+            if [ ! -d "app" ]; then
+              git clone https://github.com/${{ github.repository }}.git app
+            fi
+            
+            cd app
+            git pull origin main
+            
+            # หยุดและลบ Container เดิม (ถ้ามี)
+            docker stop webapp || true
+            docker rm webapp || true
+            
+            # Build และ Run Container ใหม่
+            docker build -t webapp:latest .
+            docker run -d --name webapp -p 80:3000 --restart unless-stopped webapp:latest
+            
+            echo "Deployment completed successfully!"
